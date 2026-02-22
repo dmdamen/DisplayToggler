@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.display-modes"
+          path="/org/gnome/shell/extensions/display-modes/">
+    <key name="layouts" type="as">
+      <default>['', '', '', '', '']</default>
+      <summary>Saved display layouts</summary>
+      <description>
+        Array of 5 layout slots. Each non-empty element is a JSON string
+        containing: { name, logicalMonitors: [{ x, y, scale, transform,
+        primary, monitors: [{ connector, vendor, product, serial, mode }] }] }
+      </description>
+    </key>
+  </schema>
+</schemalist>
