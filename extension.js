@@ -1,3 +1,4 @@
+import Clutter from 'gi://Clutter';
 import St from 'gi://St';
 import GObject from 'gi://GObject';
 
@@ -7,6 +8,145 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import {applyLayout, getCurrentState} from './dbus.js';
+
+const ICON_WIDTH = 36;
+const ICON_HEIGHT = 20;
+
+const LayoutIcon = GObject.registerClass(
+class LayoutIcon extends St.DrawingArea {
+    _init(layout, connectorPositions) {
+        super._init({
+            width: ICON_WIDTH,
+            height: ICON_HEIGHT,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._layout = layout;
+        this._connectorPositions = connectorPositions;
+    }
+
+    vfunc_repaint() {
+        const cr = this.get_context();
+        const layout = this._layout;
+
+        // Compute logical bounds of each active monitor
+        // Prefer connectorPositions (canonical physical position) so the icon
+        // always shows the true physical arrangement, even when the layout
+        // repositions a lone active monitor to x=0.
+        const rects = [];
+        for (const lm of layout.logicalMonitors) {
+            for (const mon of lm.monitors) {
+                const ref = this._connectorPositions?.get(mon.connector);
+                if (ref) {
+                    rects.push({x: ref.x, y: ref.y, w: ref.w, h: ref.h});
+                } else {
+                    let w = mon.width / lm.scale;
+                    let h = mon.height / lm.scale;
+                    if (lm.transform % 2 === 1)
+                        [w, h] = [h, w];
+                    rects.push({x: lm.x, y: lm.y, w, h});
+                }
+            }
+        }
+
+        const disabledCount = layout.disabledMonitors?.length ?? 0;
+
+        if (rects.length === 0 && disabledCount === 0) {
+            cr.$dispose();
+            return;
+        }
+
+        // Build rects for disabled monitors using reference positions
+        const disabledRects = [];
+        if (disabledCount > 0) {
+            for (const mon of layout.disabledMonitors) {
+                const ref = this._connectorPositions?.get(mon.connector);
+                if (ref) {
+                    disabledRects.push({x: ref.x, y: ref.y, w: ref.w, h: ref.h});
+                    continue;
+                }
+                // Fallback: stack to the right of known rects
+                const allSoFar = [...rects, ...disabledRects];
+                let dw = 1920 * 0.6, dh = 1080 * 0.6;
+                let startX = 0, centerY = dh / 2;
+                if (allSoFar.length > 0) {
+                    dw = allSoFar.reduce((s, r) => s + r.w, 0) / allSoFar.length * 0.6;
+                    dh = allSoFar.reduce((s, r) => s + r.h, 0) / allSoFar.length * 0.6;
+                    let maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                    for (const r of allSoFar) {
+                        maxX = Math.max(maxX, r.x + r.w);
+                        minY = Math.min(minY, r.y);
+                        maxY = Math.max(maxY, r.y + r.h);
+                    }
+                    startX = maxX + dw * 0.3;
+                    centerY = (minY + maxY) / 2;
+                }
+                disabledRects.push({
+                    x: startX, y: centerY - dh / 2, w: dw, h: dh,
+                });
+            }
+        }
+
+        // Bounding box over all rects
+        const allRects = [...rects, ...disabledRects];
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const r of allRects) {
+            minX = Math.min(minX, r.x);
+            minY = Math.min(minY, r.y);
+            maxX = Math.max(maxX, r.x + r.w);
+            maxY = Math.max(maxY, r.y + r.h);
+        }
+        const totalW = maxX - minX;
+        const totalH = maxY - minY;
+
+        // Scale to fit with padding for stroke
+        const pad = 1.5;
+        const drawW = ICON_WIDTH - pad * 2;
+        const drawH = ICON_HEIGHT - pad * 2;
+        const scale = Math.min(drawW / totalW, drawH / totalH);
+
+        // Center offset
+        const offX = pad + (drawW - totalW * scale) / 2;
+        const offY = pad + (drawH - totalH * scale) / 2;
+
+        // Theme foreground color
+        const fg = this.get_theme_node().get_foreground_color();
+        const inset = 0.5;
+
+        // Draw active monitors as solid stroked rectangles
+        cr.setSourceRGBA(fg.red / 255, fg.green / 255, fg.blue / 255, fg.alpha / 255);
+        cr.setLineWidth(1);
+        for (const r of rects) {
+            const rx = offX + (r.x - minX) * scale + inset;
+            const ry = offY + (r.y - minY) * scale + inset;
+            const rw = r.w * scale - inset * 2;
+            const rh = r.h * scale - inset * 2;
+            cr.rectangle(rx, ry, rw, rh);
+        }
+        cr.stroke();
+
+        // Draw disabled monitors: dimmed rectangle with X
+        if (disabledRects.length > 0) {
+            cr.setSourceRGBA(fg.red / 255, fg.green / 255, fg.blue / 255,
+                (fg.alpha / 255) * 0.4);
+            cr.setLineWidth(1);
+            for (const r of disabledRects) {
+                const rx = offX + (r.x - minX) * scale + inset;
+                const ry = offY + (r.y - minY) * scale + inset;
+                const rw = r.w * scale - inset * 2;
+                const rh = r.h * scale - inset * 2;
+                cr.rectangle(rx, ry, rw, rh);
+                cr.stroke();
+                cr.moveTo(rx, ry);
+                cr.lineTo(rx + rw, ry + rh);
+                cr.moveTo(rx + rw, ry);
+                cr.lineTo(rx, ry + rh);
+                cr.stroke();
+            }
+        }
+
+        cr.$dispose();
+    }
+});
 
 const DisplayModes = GObject.registerClass(
 class DisplayModes extends PanelMenu.Button {
@@ -73,6 +213,26 @@ class DisplayModes extends PanelMenu.Button {
     _populateMenu(parsed, currentState) {
         this.menu.removeAll();
 
+        // Build reference positions for all connectors from saved layouts
+        // Prefer layouts with more active monitors (the "all on" layout)
+        const connectorPositions = new Map();
+        const bySize = [...parsed].sort((a, b) =>
+            b.layout.logicalMonitors.length - a.layout.logicalMonitors.length);
+        for (const {layout} of bySize) {
+            for (const lm of layout.logicalMonitors) {
+                for (const mon of lm.monitors) {
+                    if (!connectorPositions.has(mon.connector)) {
+                        let w = mon.width / lm.scale;
+                        let h = mon.height / lm.scale;
+                        if (lm.transform % 2 === 1)
+                            [w, h] = [h, w];
+                        connectorPositions.set(mon.connector,
+                            {x: lm.x, y: lm.y, w, h});
+                    }
+                }
+            }
+        }
+
         // Find active layout
         let activeIndex = -1;
         if (currentState) {
@@ -84,13 +244,15 @@ class DisplayModes extends PanelMenu.Button {
             }
         }
 
-        // Active layout header (disabled, with check ornament)
+        // Active layout header (non-interactive, checkmark after name)
         if (activeIndex >= 0) {
             const active = parsed.find(p => p.index === activeIndex);
             const activeItem = new PopupMenu.PopupMenuItem(
-                active.layout.name || 'Unnamed');
-            activeItem.setOrnament(PopupMenu.Ornament.CHECK);
+                `${active.layout.name || 'Unnamed'} \u2714`);
             activeItem.setSensitive(false);
+            const activeIcon = new LayoutIcon(active.layout, connectorPositions);
+            activeItem.insert_child_below(activeIcon, activeItem.label);
+            activeIcon.set_opacity(255);
             this.menu.addMenuItem(activeItem);
         } else {
             const activeItem = new PopupMenu.PopupMenuItem(
@@ -107,10 +269,12 @@ class DisplayModes extends PanelMenu.Button {
             .sort((a, b) => b.count - a.count);
 
         for (const {layout, index} of available) {
-            this.menu.addAction(
+            const item = this.menu.addAction(
                 `Switch to ${layout.name || 'Unnamed'}`, () => {
                     this._applyAndTrack(layout, index);
                 });
+            const icon = new LayoutIcon(layout, connectorPositions);
+            item.insert_child_below(icon, item.label);
         }
 
         if (available.length > 0)

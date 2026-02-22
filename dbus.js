@@ -66,25 +66,38 @@ function _parseState(result) {
  * Convert parsed display state into a storable layout object.
  */
 export function stateToLayout(state, name) {
-    return {
-        name,
-        logicalMonitors: state.logicalMonitors.map(lm => ({
-            x: lm.x, y: lm.y, scale: lm.scale,
-            transform: lm.transform, primary: lm.primary,
-            monitors: lm.monitors.map(mon => {
-                const info = state.monitors.get(mon.connector);
-                return {
-                    connector: mon.connector,
-                    vendor: mon.vendor,
-                    product: mon.product,
-                    serial: mon.serial,
-                    mode: info?.currentMode?.id ?? '',
-                    width: info?.currentMode?.width ?? 0,
-                    height: info?.currentMode?.height ?? 0,
-                };
-            }),
-        })),
-    };
+    const activeConnectors = new Set();
+    const logicalMonitors = state.logicalMonitors.map(lm => ({
+        x: lm.x, y: lm.y, scale: lm.scale,
+        transform: lm.transform, primary: lm.primary,
+        monitors: lm.monitors.map(mon => {
+            activeConnectors.add(mon.connector);
+            const info = state.monitors.get(mon.connector);
+            return {
+                connector: mon.connector,
+                vendor: mon.vendor,
+                product: mon.product,
+                serial: mon.serial,
+                mode: info?.currentMode?.id ?? '',
+                width: info?.currentMode?.width ?? 0,
+                height: info?.currentMode?.height ?? 0,
+            };
+        }),
+    }));
+
+    const disabledMonitors = [];
+    for (const [connector, info] of state.monitors) {
+        if (!activeConnectors.has(connector)) {
+            disabledMonitors.push({
+                connector,
+                vendor: info.vendor,
+                product: info.product,
+                serial: info.serial,
+            });
+        }
+    }
+
+    return {name, logicalMonitors, disabledMonitors};
 }
 
 /**
@@ -95,6 +108,10 @@ export function layoutSummary(layout) {
     for (const lm of layout.logicalMonitors) {
         for (const mon of lm.monitors)
             parts.push(`${mon.connector} ${mon.width}x${mon.height}`);
+    }
+    if (layout.disabledMonitors?.length > 0) {
+        const off = layout.disabledMonitors.map(m => m.connector).join(', ');
+        parts.push(`(off: ${off})`);
     }
     return parts.join(' + ');
 }

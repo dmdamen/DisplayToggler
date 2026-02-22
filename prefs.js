@@ -10,11 +10,14 @@ export default class DisplayModesPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         const settings = this.getSettings();
 
+        window.set_default_size(600, 0);
+        window.set_size_request(-1, 445);
+
         const page = new Adw.PreferencesPage({title: 'Display Modes'});
         window.add(page);
 
         const group = new Adw.PreferencesGroup({
-            title: 'Layout Slots',
+            title: 'Profiles',
             description: 'Save up to 5 display configurations',
         });
         page.add(group);
@@ -39,33 +42,67 @@ export default class DisplayModesPreferences extends ExtensionPreferences {
                 let row;
 
                 if (layout) {
-                    row = new Adw.EntryRow({
-                        title: layoutSummary(layout),
-                        show_apply_button: true,
-                    });
-                    row.set_text(layout.name || '');
+                    const name = layout.name || `Profile ${slot + 1}`;
 
-                    row.connect('apply', () => {
-                        try {
-                            const current = settings.get_strv('layouts');
-                            const l = JSON.parse(current[slot]);
-                            l.name = row.get_text();
-                            current[slot] = JSON.stringify(l);
-                            settings.set_strv('layouts', current);
-                        } catch { /* ignore */ }
+                    row = new Adw.ActionRow({
+                        title: name,
+                        subtitle: layoutSummary(layout),
                     });
 
                     const suffix = new Gtk.Box({spacing: 4, valign: Gtk.Align.CENTER});
 
-                    const saveBtn = new Gtk.Button({
-                        icon_name: 'document-save-symbolic',
+                    const editBtn = new Gtk.Button({
+                        icon_name: 'document-edit-symbolic',
                         valign: Gtk.Align.CENTER,
-                        tooltip_text: 'Save current display layout to this slot',
+                        tooltip_text: 'Rename this profile',
+                        css_classes: ['flat'],
+                    });
+                    editBtn.connect('clicked', () => {
+                        const dialog = new Adw.MessageDialog({
+                            heading: 'Rename Profile',
+                            transient_for: window,
+                            modal: true,
+                        });
+
+                        const entry = new Gtk.Entry({
+                            text: layout.name || '',
+                            placeholder_text: `Profile ${slot + 1}`,
+                            hexpand: true,
+                        });
+                        entry.connect('activate', () => {
+                            dialog.response('save');
+                        });
+                        dialog.set_extra_child(entry);
+
+                        dialog.add_response('cancel', 'Cancel');
+                        dialog.add_response('save', 'Save');
+                        dialog.set_response_appearance('save', Adw.ResponseAppearance.SUGGESTED);
+                        dialog.set_default_response('save');
+
+                        dialog.connect('response', (_dialog, response) => {
+                            if (response === 'save') {
+                                try {
+                                    const current = settings.get_strv('layouts');
+                                    const l = JSON.parse(current[slot]);
+                                    l.name = entry.get_text();
+                                    current[slot] = JSON.stringify(l);
+                                    settings.set_strv('layouts', current);
+                                    buildRows();
+                                } catch { /* ignore */ }
+                            }
+                        });
+                        dialog.present();
+                    });
+                    suffix.append(editBtn);
+
+                    const saveBtn = new Gtk.Button({
+                        icon_name: 'camera-photo-symbolic',
+                        valign: Gtk.Align.CENTER,
+                        tooltip_text: 'Snapshot current display layout to this profile',
                         css_classes: ['flat'],
                     });
                     saveBtn.connect('clicked', () => {
                         getCurrentState().then(state => {
-                            const name = row.get_text() || `Layout ${slot + 1}`;
                             const newLayout = stateToLayout(state, name);
                             const current = settings.get_strv('layouts');
                             current[slot] = JSON.stringify(newLayout);
@@ -80,7 +117,7 @@ export default class DisplayModesPreferences extends ExtensionPreferences {
                     const delBtn = new Gtk.Button({
                         icon_name: 'user-trash-symbolic',
                         valign: Gtk.Align.CENTER,
-                        tooltip_text: 'Delete this layout',
+                        tooltip_text: 'Delete this profile',
                         css_classes: ['flat'],
                     });
                     delBtn.connect('clicked', () => {
@@ -94,19 +131,30 @@ export default class DisplayModesPreferences extends ExtensionPreferences {
                     row.add_suffix(suffix);
                 } else {
                     row = new Adw.ActionRow({
-                        title: `Slot ${slot + 1}`,
+                        title: `Profile ${slot + 1}`,
                         subtitle: 'Empty',
                     });
 
-                    const saveBtn = new Gtk.Button({
-                        label: 'Save Current',
+                    const suffix = new Gtk.Box({spacing: 4, valign: Gtk.Align.CENTER});
+
+                    const editBtn = new Gtk.Button({
+                        icon_name: 'document-edit-symbolic',
                         valign: Gtk.Align.CENTER,
-                        css_classes: ['suggested-action'],
+                        tooltip_text: 'Rename this profile',
+                        css_classes: ['flat'],
+                        sensitive: false,
+                    });
+                    suffix.append(editBtn);
+
+                    const saveBtn = new Gtk.Button({
+                        icon_name: 'camera-photo-symbolic',
+                        valign: Gtk.Align.CENTER,
+                        tooltip_text: 'Snapshot current display layout to this profile',
+                        css_classes: ['flat'],
                     });
                     saveBtn.connect('clicked', () => {
                         getCurrentState().then(state => {
-                            const name = `Layout ${slot + 1}`;
-                            const newLayout = stateToLayout(state, name);
+                            const newLayout = stateToLayout(state, `Profile ${slot + 1}`);
                             const current = settings.get_strv('layouts');
                             current[slot] = JSON.stringify(newLayout);
                             settings.set_strv('layouts', current);
@@ -115,7 +163,18 @@ export default class DisplayModesPreferences extends ExtensionPreferences {
                             window.add_toast(new Adw.Toast({title: `Error: ${e.message}`}));
                         });
                     });
-                    row.add_suffix(saveBtn);
+                    suffix.append(saveBtn);
+
+                    const delBtn = new Gtk.Button({
+                        icon_name: 'user-trash-symbolic',
+                        valign: Gtk.Align.CENTER,
+                        tooltip_text: 'Delete this profile',
+                        css_classes: ['flat'],
+                        sensitive: false,
+                    });
+                    suffix.append(delBtn);
+
+                    row.add_suffix(suffix);
                 }
 
                 group.add(row);
