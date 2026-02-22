@@ -11,5 +11,13 @@
         primary, monitors: [{ connector, vendor, product, serial, mode }] }] }
       </description>
     </key>
+    <key name="usage-counts" type="as">
+      <default>['0', '0', '0', '0', '0']</default>
+      <summary>Layout usage counts</summary>
+      <description>
+        Array of 5 usage counts corresponding to layout slots.
+        Each element tracks how many times that layout has been applied.
+      </description>
+    </key>
   </schema>
 </schemalist>

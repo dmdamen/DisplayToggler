@@ -7,16 +7,28 @@ const INTERFACE = 'org.gnome.Mutter.DisplayConfig';
 
 /**
  * Call GetCurrentState on Mutter DisplayConfig and parse into JS objects.
- * Returns { serial, monitors (Map<connector, info>), logicalMonitors }.
+ * Returns Promise<{ serial, monitors (Map<connector, info>), logicalMonitors }>.
  */
 export function getCurrentState() {
-    const result = Gio.DBus.session.call_sync(
-        BUS_NAME, OBJECT_PATH, INTERFACE,
-        'GetCurrentState',
-        null, null,
-        Gio.DBusCallFlags.NONE, -1, null,
-    );
+    return new Promise((resolve, reject) => {
+        Gio.DBus.session.call(
+            BUS_NAME, OBJECT_PATH, INTERFACE,
+            'GetCurrentState',
+            null, null,
+            Gio.DBusCallFlags.NONE, -1, null,
+            (conn, res) => {
+                try {
+                    const result = conn.call_finish(res);
+                    resolve(_parseState(result));
+                } catch (e) {
+                    reject(e);
+                }
+            },
+        );
+    });
+}
 
+function _parseState(result) {
     const [serial, monitors, logicalMonitors] = result.deep_unpack();
 
     // Map connector -> { connector, vendor, product, serial, currentMode }

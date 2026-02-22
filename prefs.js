@@ -64,17 +64,16 @@ export default class DisplayModesPreferences extends ExtensionPreferences {
                         css_classes: ['flat'],
                     });
                     saveBtn.connect('clicked', () => {
-                        try {
-                            const state = getCurrentState();
+                        getCurrentState().then(state => {
                             const name = row.get_text() || `Layout ${slot + 1}`;
                             const newLayout = stateToLayout(state, name);
                             const current = settings.get_strv('layouts');
                             current[slot] = JSON.stringify(newLayout);
                             settings.set_strv('layouts', current);
                             buildRows();
-                        } catch (e) {
+                        }).catch(e => {
                             window.add_toast(new Adw.Toast({title: `Error: ${e.message}`}));
-                        }
+                        });
                     });
                     suffix.append(saveBtn);
 
@@ -105,17 +104,16 @@ export default class DisplayModesPreferences extends ExtensionPreferences {
                         css_classes: ['suggested-action'],
                     });
                     saveBtn.connect('clicked', () => {
-                        try {
-                            const state = getCurrentState();
+                        getCurrentState().then(state => {
                             const name = `Layout ${slot + 1}`;
                             const newLayout = stateToLayout(state, name);
                             const current = settings.get_strv('layouts');
                             current[slot] = JSON.stringify(newLayout);
                             settings.set_strv('layouts', current);
                             buildRows();
-                        } catch (e) {
+                        }).catch(e => {
                             window.add_toast(new Adw.Toast({title: `Error: ${e.message}`}));
-                        }
+                        });
                     });
                     row.add_suffix(saveBtn);
                 }
