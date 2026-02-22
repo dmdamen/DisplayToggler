@@ -120,7 +120,7 @@ export function layoutSummary(layout) {
  * Apply a saved layout via ApplyMonitorsConfig with a fresh serial.
  * Uses async DBus calls to avoid blocking the compositor main loop.
  */
-export function applyLayout(layout) {
+export function applyLayout(layout, persistent = false) {
     return new Promise((resolve, reject) => {
         Gio.DBus.session.call(
             BUS_NAME, OBJECT_PATH, INTERFACE,
@@ -137,11 +137,15 @@ export function applyLayout(layout) {
                         lm.monitors.map(mon => [mon.connector, mon.mode, {}]),
                     ]);
 
+                    // Method 1 = temporary (shows confirmation dialog)
+                    // Method 2 = persistent (no confirmation)
+                    const method = persistent ? 2 : 1;
+
                     conn.call(
                         BUS_NAME, OBJECT_PATH, INTERFACE,
                         'ApplyMonitorsConfig',
                         new GLib.Variant('(uua(iiduba(ssa{sv}))a{sv})', [
-                            serial, 2, logicalMonitors, {},
+                            serial, method, logicalMonitors, {},
                         ]),
                         null, Gio.DBusCallFlags.NONE, -1, null,
                         (conn2, res2) => {

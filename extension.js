@@ -290,7 +290,8 @@ class DisplayModes extends PanelMenu.Button {
         counts[slotIndex] = String(current + 1);
         this._settings.set_strv('usage-counts', counts);
 
-        applyLayout(layout).catch(e => {
+        const persistent = this._settings.get_boolean('confirm-switch');
+        applyLayout(layout, persistent).catch(e => {
             Main.notifyError('Display Modes', e.message);
         });
     }

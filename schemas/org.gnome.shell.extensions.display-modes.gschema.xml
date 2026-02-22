@@ -11,6 +11,15 @@
         primary, monitors: [{ connector, vendor, product, serial, mode }] }] }
       </description>
     </key>
+    <key name="confirm-switch" type="b">
+      <default>false</default>
+      <summary>Suppress confirmation dialog</summary>
+      <description>
+        When enabled, layout changes are applied immediately without
+        a confirmation dialog. When disabled, a confirmation dialog
+        is shown after switching.
+      </description>
+    </key>
     <key name="usage-counts" type="as">
       <default>['0', '0', '0', '0', '0']</default>
       <summary>Layout usage counts</summary>

@@ -183,5 +183,20 @@ export default class DisplayModesPreferences extends ExtensionPreferences {
         };
 
         buildRows();
+
+        const behaviorGroup = new Adw.PreferencesGroup({
+            title: 'Behavior',
+        });
+        page.add(behaviorGroup);
+
+        const confirmRow = new Adw.SwitchRow({
+            title: 'Suppress confirmation dialog',
+            subtitle: 'Apply layout changes immediately without confirmation',
+        });
+        confirmRow.set_active(settings.get_boolean('confirm-switch'));
+        confirmRow.connect('notify::active', () => {
+            settings.set_boolean('confirm-switch', confirmRow.get_active());
+        });
+        behaviorGroup.add(confirmRow);
     }
 }
