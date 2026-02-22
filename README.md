@@ -1,5 +1,7 @@
 # Display Modes
 
+**NOTE: THIS CODE IS 100% AI GENERATED**
+
 A GNOME Shell extension to quickly switch between saved display configurations from the top bar.
 
 Ideal for multi-monitor setups where you regularly switch between different arrangements — e.g. a productivity layout with all monitors active, a gaming layout with a single display, or a side project setup with specific monitors turned off.
@@ -28,7 +30,7 @@ GNOME Shell 45, 46, 47, 48, 49
 1. Clone this repository into your GNOME Shell extensions directory:
 
    ```bash
-   git clone https://github.com/<your-username>/DisplayToggler.git \
+   git clone https://github.com/dmdamen/DisplayToggler.git \
      ~/.local/share/gnome-shell/extensions/display-modes@dennis@damenmail.nl
    ```
 
