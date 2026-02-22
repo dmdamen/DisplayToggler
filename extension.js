@@ -40,11 +40,9 @@ class DisplayModes extends PanelMenu.Button {
 
             hasLayouts = true;
             this.menu.addAction(layout.name || 'Unnamed', () => {
-                try {
-                    applyLayout(layout);
-                } catch (e) {
+                applyLayout(layout).catch(e => {
                     Main.notifyError('Display Modes', e.message);
-                }
+                });
             });
         }
 

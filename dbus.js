@@ -89,21 +89,45 @@ export function layoutSummary(layout) {
 
 /**
  * Apply a saved layout via ApplyMonitorsConfig with a fresh serial.
+ * Uses async DBus calls to avoid blocking the compositor main loop.
  */
 export function applyLayout(layout) {
-    const {serial} = getCurrentState();
+    return new Promise((resolve, reject) => {
+        Gio.DBus.session.call(
+            BUS_NAME, OBJECT_PATH, INTERFACE,
+            'GetCurrentState',
+            null, null,
+            Gio.DBusCallFlags.NONE, -1, null,
+            (conn, res) => {
+                try {
+                    const result = conn.call_finish(res);
+                    const [serial] = result.deep_unpack();
 
-    const logicalMonitors = layout.logicalMonitors.map(lm => [
-        lm.x, lm.y, lm.scale, lm.transform, lm.primary,
-        lm.monitors.map(mon => [mon.connector, mon.mode, {}]),
-    ]);
+                    const logicalMonitors = layout.logicalMonitors.map(lm => [
+                        lm.x, lm.y, lm.scale, lm.transform, lm.primary,
+                        lm.monitors.map(mon => [mon.connector, mon.mode, {}]),
+                    ]);
 
-    Gio.DBus.session.call_sync(
-        BUS_NAME, OBJECT_PATH, INTERFACE,
-        'ApplyMonitorsConfig',
-        new GLib.Variant('(uua(iiduba(ssa{sv}))a{sv})', [
-            serial, 2, logicalMonitors, {},
-        ]),
-        null, Gio.DBusCallFlags.NONE, -1, null,
-    );
+                    conn.call(
+                        BUS_NAME, OBJECT_PATH, INTERFACE,
+                        'ApplyMonitorsConfig',
+                        new GLib.Variant('(uua(iiduba(ssa{sv}))a{sv})', [
+                            serial, 2, logicalMonitors, {},
+                        ]),
+                        null, Gio.DBusCallFlags.NONE, -1, null,
+                        (conn2, res2) => {
+                            try {
+                                conn2.call_finish(res2);
+                                resolve();
+                            } catch (e) {
+                                reject(e);
+                            }
+                        },
+                    );
+                } catch (e) {
+                    reject(e);
+                }
+            },
+        );
+    });
 }

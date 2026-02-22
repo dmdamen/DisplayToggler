@@ -1,6 +1,5 @@
 import Adw from 'gi://Adw';
 import Gtk from 'gi://Gtk';
-import GLib from 'gi://GLib';
 
 import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 import {getCurrentState, stateToLayout, layoutSummary} from './dbus.js';
@@ -21,17 +20,8 @@ export default class DisplayModesPreferences extends ExtensionPreferences {
         page.add(group);
 
         let rows = [];
-        let selfChange = false;
-        const debounceTimers = new Map();
 
         const buildRows = () => {
-            // Clear debounce timers
-            for (const [, id] of debounceTimers) {
-                if (id) GLib.source_remove(id);
-            }
-            debounceTimers.clear();
-
-            // Remove old rows
             for (const row of rows) group.remove(row);
             rows = [];
 
@@ -46,96 +36,95 @@ export default class DisplayModesPreferences extends ExtensionPreferences {
                     try { layout = JSON.parse(json); } catch { /* treat as empty */ }
                 }
 
-                const row = new Adw.ActionRow({
-                    title: `Slot ${slot + 1}`,
-                    subtitle: layout ? layoutSummary(layout) : 'Empty',
-                });
-
-                const box = new Gtk.Box({spacing: 8, valign: Gtk.Align.CENTER});
+                let row;
 
                 if (layout) {
-                    const entry = new Gtk.Entry({
-                        text: layout.name || '',
-                        placeholder_text: `Layout ${slot + 1}`,
+                    row = new Adw.EntryRow({
+                        title: layoutSummary(layout),
+                        show_apply_button: true,
+                    });
+                    row.set_text(layout.name || '');
+
+                    row.connect('apply', () => {
+                        try {
+                            const current = settings.get_strv('layouts');
+                            const l = JSON.parse(current[slot]);
+                            l.name = row.get_text();
+                            current[slot] = JSON.stringify(l);
+                            settings.set_strv('layouts', current);
+                        } catch { /* ignore */ }
+                    });
+
+                    const suffix = new Gtk.Box({spacing: 4, valign: Gtk.Align.CENTER});
+
+                    const saveBtn = new Gtk.Button({
+                        icon_name: 'document-save-symbolic',
                         valign: Gtk.Align.CENTER,
-                        width_chars: 15,
+                        tooltip_text: 'Save current display layout to this slot',
+                        css_classes: ['flat'],
                     });
-
-                    entry.connect('changed', () => {
-                        const prev = debounceTimers.get(slot);
-                        if (prev) GLib.source_remove(prev);
-
-                        debounceTimers.set(slot, GLib.timeout_add(
-                            GLib.PRIORITY_DEFAULT, 500, () => {
-                                debounceTimers.set(slot, 0);
-                                try {
-                                    const current = settings.get_strv('layouts');
-                                    const l = JSON.parse(current[slot]);
-                                    l.name = entry.get_text();
-                                    current[slot] = JSON.stringify(l);
-                                    selfChange = true;
-                                    settings.set_strv('layouts', current);
-                                    selfChange = false;
-                                } catch { /* ignore */ }
-                                return GLib.SOURCE_REMOVE;
-                            },
-                        ));
+                    saveBtn.connect('clicked', () => {
+                        try {
+                            const state = getCurrentState();
+                            const name = row.get_text() || `Layout ${slot + 1}`;
+                            const newLayout = stateToLayout(state, name);
+                            const current = settings.get_strv('layouts');
+                            current[slot] = JSON.stringify(newLayout);
+                            settings.set_strv('layouts', current);
+                            buildRows();
+                        } catch (e) {
+                            window.add_toast(new Adw.Toast({title: `Error: ${e.message}`}));
+                        }
                     });
+                    suffix.append(saveBtn);
 
-                    box.append(entry);
-                }
-
-                // Save Current / Overwrite button
-                const saveBtn = new Gtk.Button({
-                    label: layout ? 'Overwrite' : 'Save Current',
-                    valign: Gtk.Align.CENTER,
-                    css_classes: ['suggested-action'],
-                });
-                saveBtn.connect('clicked', () => {
-                    try {
-                        const state = getCurrentState();
-                        const name = layout?.name || `Layout ${slot + 1}`;
-                        const newLayout = stateToLayout(state, name);
-                        const current = settings.get_strv('layouts');
-                        current[slot] = JSON.stringify(newLayout);
-                        settings.set_strv('layouts', current);
-                    } catch (e) {
-                        window.add_toast(new Adw.Toast({title: `Error: ${e.message}`}));
-                    }
-                });
-                box.append(saveBtn);
-
-                if (layout) {
                     const delBtn = new Gtk.Button({
                         icon_name: 'user-trash-symbolic',
                         valign: Gtk.Align.CENTER,
-                        css_classes: ['destructive-action'],
+                        tooltip_text: 'Delete this layout',
+                        css_classes: ['flat'],
                     });
                     delBtn.connect('clicked', () => {
                         const current = settings.get_strv('layouts');
                         current[slot] = '';
                         settings.set_strv('layouts', current);
+                        buildRows();
                     });
-                    box.append(delBtn);
+                    suffix.append(delBtn);
+
+                    row.add_suffix(suffix);
+                } else {
+                    row = new Adw.ActionRow({
+                        title: `Slot ${slot + 1}`,
+                        subtitle: 'Empty',
+                    });
+
+                    const saveBtn = new Gtk.Button({
+                        label: 'Save Current',
+                        valign: Gtk.Align.CENTER,
+                        css_classes: ['suggested-action'],
+                    });
+                    saveBtn.connect('clicked', () => {
+                        try {
+                            const state = getCurrentState();
+                            const name = `Layout ${slot + 1}`;
+                            const newLayout = stateToLayout(state, name);
+                            const current = settings.get_strv('layouts');
+                            current[slot] = JSON.stringify(newLayout);
+                            settings.set_strv('layouts', current);
+                            buildRows();
+                        } catch (e) {
+                            window.add_toast(new Adw.Toast({title: `Error: ${e.message}`}));
+                        }
+                    });
+                    row.add_suffix(saveBtn);
                 }
 
-                row.add_suffix(box);
                 group.add(row);
                 rows.push(row);
             }
         };
 
         buildRows();
-
-        const changedId = settings.connect('changed::layouts', () => {
-            if (!selfChange) buildRows();
-        });
-
-        window.connect('close-request', () => {
-            settings.disconnect(changedId);
-            for (const [, id] of debounceTimers) {
-                if (id) GLib.source_remove(id);
-            }
-        });
     }
 }
