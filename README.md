@@ -59,7 +59,3 @@ GNOME Shell 45, 46, 47, 48, 49
 ## How It Works
 
 The extension communicates with Mutter's `org.gnome.Mutter.DisplayConfig` DBus interface to read the current monitor state and apply saved configurations using `ApplyMonitorsConfig`. Layouts are stored as JSON in GSettings, capturing monitor connectors, resolutions, positions, scale, and transform for each logical monitor.
-
-## License
-
-GPL-2.0-or-later
