@@ -1,7 +1,7 @@
 {
     "name": "Display Modes",
     "description": "Quickly switch between predefined display configurations from the top bar",
-    "uuid": "display-modes@dennis",
-    "shell-version": ["45", "46", "47", "48"],
+    "uuid": "display-modes@dennis@damenmail.nl",
+    "shell-version": ["45", "46", "47", "48", "49"],
     "version": 1
 }
