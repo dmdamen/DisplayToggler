@@ -1,4 +1,5 @@
 import Clutter from 'gi://Clutter';
+import Meta from 'gi://Meta';
 import St from 'gi://St';
 import GObject from 'gi://GObject';
 
@@ -290,8 +291,8 @@ class DisplayModes extends PanelMenu.Button {
         counts[slotIndex] = String(current + 1);
         this._settings.set_strv('usage-counts', counts);
 
-        const persistent = this._settings.get_boolean('confirm-switch');
-        applyLayout(layout, persistent).catch(e => {
+        const suppress = this._settings.get_boolean('confirm-switch');
+        applyLayout(layout, !suppress).catch(e => {
             Main.notifyError('Display Modes', e.message);
         });
     }
@@ -334,11 +335,41 @@ class DisplayModes extends PanelMenu.Button {
 
 export default class DisplayModesExtension extends Extension {
     enable() {
+        this._settings = this.getSettings();
         this._indicator = new DisplayModes(this);
         Main.panel.addToStatusArea('display-modes', this._indicator);
+
+        this._monitorManager = Meta.MonitorManager.get();
+        this._updateAutoConfirm();
+        this._confirmSettingId = this._settings.connect('changed::confirm-switch',
+            () => this._updateAutoConfirm());
+    }
+
+    _updateAutoConfirm() {
+        const suppress = this._settings.get_boolean('confirm-switch');
+
+        if (suppress && !this._confirmId) {
+            this._confirmId = this._monitorManager.connect(
+                'confirm-display-change', () => {
+                    this._monitorManager.confirm_display_change();
+                });
+        } else if (!suppress && this._confirmId) {
+            this._monitorManager.disconnect(this._confirmId);
+            this._confirmId = null;
+        }
     }
 
     disable() {
+        if (this._confirmId) {
+            this._monitorManager.disconnect(this._confirmId);
+            this._confirmId = null;
+        }
+        if (this._confirmSettingId) {
+            this._settings.disconnect(this._confirmSettingId);
+            this._confirmSettingId = null;
+        }
+        this._monitorManager = null;
+        this._settings = null;
         this._indicator?.destroy();
         this._indicator = null;
     }

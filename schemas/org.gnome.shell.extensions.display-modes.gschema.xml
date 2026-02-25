@@ -12,7 +12,7 @@
       </description>
     </key>
     <key name="confirm-switch" type="b">
-      <default>false</default>
+      <default>true</default>
       <summary>Suppress confirmation dialog</summary>
       <description>
         When enabled, layout changes are applied immediately without
