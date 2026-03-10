@@ -1,5 +1,4 @@
 import Clutter from 'gi://Clutter';
-import Meta from 'gi://Meta';
 import St from 'gi://St';
 import GObject from 'gi://GObject';
 
@@ -8,6 +7,7 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
+import GLib from 'gi://GLib';
 import {applyLayout, getCurrentState} from './dbus.js';
 
 const ICON_WIDTH = 36;
@@ -291,7 +291,11 @@ class DisplayModes extends PanelMenu.Button {
         counts[slotIndex] = String(current + 1);
         this._settings.set_strv('usage-counts', counts);
 
+        this._settings.set_int('last-applied', slotIndex);
+
         const suppress = this._settings.get_boolean('confirm-switch');
+        if (suppress)
+            this._ext._pendingConfirm = true;
         applyLayout(layout, !suppress).catch(e => {
             Main.notifyError('Display Modes', e.message);
         });
@@ -339,10 +343,45 @@ export default class DisplayModesExtension extends Extension {
         this._indicator = new DisplayModes(this);
         Main.panel.addToStatusArea('display-modes', this._indicator);
 
-        this._monitorManager = Meta.MonitorManager.get();
+        this._monitorManager = global.backend.get_monitor_manager();
         this._updateAutoConfirm();
         this._confirmSettingId = this._settings.connect('changed::confirm-switch',
             () => this._updateAutoConfirm());
+
+        this._restoreLayout();
+    }
+
+    _restoreLayout() {
+        const slotIndex = this._settings.get_int('last-applied');
+        if (slotIndex < 0)
+            return;
+
+        const layouts = this._settings.get_strv('layouts');
+        if (!layouts[slotIndex])
+            return;
+
+        let layout;
+        try {
+            layout = JSON.parse(layouts[slotIndex]);
+        } catch {
+            return;
+        }
+
+        // Delay to let GNOME finish its own display initialization
+        this._restoreId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, () => {
+            this._restoreId = 0;
+            getCurrentState().then(state => {
+                if (this._indicator?._isActiveLayout(layout, state))
+                    return; // already correct, nothing to do
+                const suppress = this._settings.get_boolean('confirm-switch');
+                if (suppress)
+                    this._pendingConfirm = true;
+                applyLayout(layout, !suppress).catch(e => {
+                    Main.notifyError('Display Modes', e.message);
+                });
+            }).catch(() => {});
+            return GLib.SOURCE_REMOVE;
+        });
     }
 
     _updateAutoConfirm() {
@@ -351,6 +390,9 @@ export default class DisplayModesExtension extends Extension {
         if (suppress && !this._confirmId) {
             this._confirmId = this._monitorManager.connect(
                 'confirm-display-change', () => {
+                    if (!this._pendingConfirm)
+                        return;
+                    this._pendingConfirm = false;
                     this._monitorManager.confirm_display_change();
                 });
         } else if (!suppress && this._confirmId) {
@@ -360,6 +402,10 @@ export default class DisplayModesExtension extends Extension {
     }
 
     disable() {
+        if (this._restoreId) {
+            GLib.source_remove(this._restoreId);
+            this._restoreId = 0;
+        }
         if (this._confirmId) {
             this._monitorManager.disconnect(this._confirmId);
             this._confirmId = null;

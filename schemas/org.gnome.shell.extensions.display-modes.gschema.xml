@@ -20,6 +20,14 @@
         is shown after switching.
       </description>
     </key>
+    <key name="last-applied" type="i">
+      <default>-1</default>
+      <summary>Last applied layout slot</summary>
+      <description>
+        Index of the most recently applied layout slot, or -1 if none.
+        Used to restore the layout on session start.
+      </description>
+    </key>
     <key name="usage-counts" type="as">
       <default>['0', '0', '0', '0', '0']</default>
       <summary>Layout usage counts</summary>
