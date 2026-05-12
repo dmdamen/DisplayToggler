@@ -2,7 +2,7 @@
     "name": "Display Modes",
     "description": "Quickly switch between predefined display configurations from the top bar",
     "uuid": "display-modes@dennis@damenmail.nl",
-    "shell-version": ["45", "46", "47", "48", "49"],
+    "shell-version": ["45", "46", "47", "48", "49", "50"],
     "version": 1,
     "settings-schema": "org.gnome.shell.extensions.display-modes"
 }

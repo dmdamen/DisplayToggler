@@ -58,10 +58,8 @@ export default class DisplayModesPreferences extends ExtensionPreferences {
                         css_classes: ['flat'],
                     });
                     editBtn.connect('clicked', () => {
-                        const dialog = new Adw.MessageDialog({
+                        const dialog = new Adw.AlertDialog({
                             heading: 'Rename Profile',
-                            transient_for: window,
-                            modal: true,
                         });
 
                         const entry = new Gtk.Entry({
@@ -91,7 +89,7 @@ export default class DisplayModesPreferences extends ExtensionPreferences {
                                 } catch { /* ignore */ }
                             }
                         });
-                        dialog.present();
+                        dialog.present(window);
                     });
                     suffix.append(editBtn);
 
