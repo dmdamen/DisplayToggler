@@ -8,7 +8,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import GLib from 'gi://GLib';
-import {applyLayout, getCurrentState} from './dbus.js';
+import {applyLayout, getCurrentState, isActiveLayout, rectForMonitor} from './dbus.js';
 
 const ICON_WIDTH = 36;
 const ICON_HEIGHT = 20;
@@ -37,15 +37,8 @@ class LayoutIcon extends St.DrawingArea {
         for (const lm of layout.logicalMonitors) {
             for (const mon of lm.monitors) {
                 const ref = this._connectorPositions?.get(mon.connector);
-                if (ref) {
-                    rects.push({x: ref.x, y: ref.y, w: ref.w, h: ref.h});
-                } else {
-                    let w = mon.width / lm.scale;
-                    let h = mon.height / lm.scale;
-                    if (lm.transform % 2 === 1)
-                        [w, h] = [h, w];
-                    rects.push({x: lm.x, y: lm.y, w, h});
-                }
+                rects.push(ref ? {x: ref.x, y: ref.y, w: ref.w, h: ref.h}
+                    : rectForMonitor(lm, mon));
             }
         }
 
@@ -186,7 +179,10 @@ class DisplayModes extends PanelMenu.Button {
                 const layout = JSON.parse(layouts[i]);
                 const count = parseInt(usageCounts[i] || '0', 10) || 0;
                 parsed.push({layout, index: i, count});
-            } catch { continue; }
+            } catch (e) {
+                console.error(`Display Modes: failed to parse layout slot ${i}`, e);
+                continue;
+            }
         }
 
         if (parsed.length === 0) {
@@ -222,14 +218,8 @@ class DisplayModes extends PanelMenu.Button {
         for (const {layout} of bySize) {
             for (const lm of layout.logicalMonitors) {
                 for (const mon of lm.monitors) {
-                    if (!connectorPositions.has(mon.connector)) {
-                        let w = mon.width / lm.scale;
-                        let h = mon.height / lm.scale;
-                        if (lm.transform % 2 === 1)
-                            [w, h] = [h, w];
-                        connectorPositions.set(mon.connector,
-                            {x: lm.x, y: lm.y, w, h});
-                    }
+                    if (!connectorPositions.has(mon.connector))
+                        connectorPositions.set(mon.connector, rectForMonitor(lm, mon));
                 }
             }
         }
@@ -238,7 +228,7 @@ class DisplayModes extends PanelMenu.Button {
         let activeIndex = -1;
         if (currentState) {
             for (const {layout, index} of parsed) {
-                if (this._isActiveLayout(layout, currentState)) {
+                if (isActiveLayout(layout, currentState)) {
                     activeIndex = index;
                     break;
                 }
@@ -295,33 +285,10 @@ class DisplayModes extends PanelMenu.Button {
 
         const suppress = this._settings.get_boolean('confirm-switch');
         if (suppress)
-            this._ext._pendingConfirm = true;
+            this._ext.armPendingConfirm();
         applyLayout(layout, !suppress).catch(e => {
             Main.notifyError('Display Modes', e.message);
         });
-    }
-
-    _isActiveLayout(layout, state) {
-        if (layout.logicalMonitors.length !== state.logicalMonitors.length)
-            return false;
-
-        for (const lm of layout.logicalMonitors) {
-            // Find matching logical monitor by position and properties
-            const match = state.logicalMonitors.find(slm =>
-                slm.x === lm.x && slm.y === lm.y &&
-                Math.abs(slm.scale - lm.scale) < 0.01 &&
-                slm.transform === lm.transform
-            );
-            if (!match) return false;
-
-            // Check all monitors within the logical monitor
-            for (const mon of lm.monitors) {
-                const info = state.monitors.get(mon.connector);
-                if (!info?.currentMode) return false;
-                if (info.currentMode.id !== mon.mode) return false;
-            }
-        }
-        return true;
     }
 
     destroy() {
@@ -363,7 +330,8 @@ export default class DisplayModesExtension extends Extension {
         let layout;
         try {
             layout = JSON.parse(layouts[slotIndex]);
-        } catch {
+        } catch (e) {
+            console.error(`Display Modes: failed to parse layout slot ${slotIndex} for restore`, e);
             return;
         }
 
@@ -371,17 +339,23 @@ export default class DisplayModesExtension extends Extension {
         this._restoreId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, () => {
             this._restoreId = 0;
             getCurrentState().then(state => {
-                if (this._indicator?._isActiveLayout(layout, state))
+                if (isActiveLayout(layout, state))
                     return; // already correct, nothing to do
                 const suppress = this._settings.get_boolean('confirm-switch');
                 if (suppress)
-                    this._pendingConfirm = true;
+                    this.armPendingConfirm();
                 applyLayout(layout, !suppress).catch(e => {
                     Main.notifyError('Display Modes', e.message);
                 });
-            }).catch(() => {});
+            }).catch(e => {
+                console.error('Display Modes: failed to get current state for restore', e);
+            });
             return GLib.SOURCE_REMOVE;
         });
+    }
+
+    armPendingConfirm() {
+        this._pendingConfirm = true;
     }
 
     _updateAutoConfirm() {

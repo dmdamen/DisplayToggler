@@ -101,6 +101,44 @@ export function stateToLayout(state, name) {
 }
 
 /**
+ * Logical (post-scale, post-transform) rect of a monitor within its logical
+ * monitor group: { x, y, w, h }.
+ */
+export function rectForMonitor(lm, mon) {
+    let w = mon.width / lm.scale;
+    let h = mon.height / lm.scale;
+    if (lm.transform % 2 === 1)
+        [w, h] = [h, w];
+    return {x: lm.x, y: lm.y, w, h};
+}
+
+/**
+ * Whether a saved layout matches the given current display state (as
+ * returned by getCurrentState): same logical monitor positions/scale/
+ * transform, and same active mode per connector.
+ */
+export function isActiveLayout(layout, state) {
+    if (layout.logicalMonitors.length !== state.logicalMonitors.length)
+        return false;
+
+    for (const lm of layout.logicalMonitors) {
+        const match = state.logicalMonitors.find(slm =>
+            slm.x === lm.x && slm.y === lm.y &&
+            Math.abs(slm.scale - lm.scale) < 0.01 &&
+            slm.transform === lm.transform
+        );
+        if (!match) return false;
+
+        for (const mon of lm.monitors) {
+            const info = state.monitors.get(mon.connector);
+            if (!info?.currentMode) return false;
+            if (info.currentMode.id !== mon.mode) return false;
+        }
+    }
+    return true;
+}
+
+/**
  * Human-readable summary of monitors in a layout (e.g. "DP-1 2560x1440 + DP-2 2560x1440").
  */
 export function layoutSummary(layout) {
