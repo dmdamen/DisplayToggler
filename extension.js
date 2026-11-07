@@ -37,8 +37,7 @@ class LayoutIcon extends St.DrawingArea {
         for (const lm of layout.logicalMonitors) {
             for (const mon of lm.monitors) {
                 const ref = this._connectorPositions?.get(mon.connector);
-                rects.push(ref ? {x: ref.x, y: ref.y, w: ref.w, h: ref.h}
-                    : rectForMonitor(lm, mon));
+                rects.push(ref ?? rectForMonitor(lm, mon));
             }
         }
 
@@ -55,7 +54,7 @@ class LayoutIcon extends St.DrawingArea {
             for (const mon of layout.disabledMonitors) {
                 const ref = this._connectorPositions?.get(mon.connector);
                 if (ref) {
-                    disabledRects.push({x: ref.x, y: ref.y, w: ref.w, h: ref.h});
+                    disabledRects.push(ref);
                     continue;
                 }
                 // Fallback: stack to the right of known rects
@@ -149,6 +148,8 @@ class DisplayModes extends PanelMenu.Button {
 
         this._ext = ext;
         this._settings = ext.getSettings();
+        this._menuGeneration = 0;
+        this._destroyed = false;
 
         const icon = new St.Icon({
             icon_name: 'preferences-desktop-display-symbolic',
@@ -166,6 +167,8 @@ class DisplayModes extends PanelMenu.Button {
     }
 
     _buildMenu() {
+        // Invalidate any getCurrentState() reply still in flight
+        const generation = ++this._menuGeneration;
         this.menu.removeAll();
 
         const layouts = this._settings.get_strv('layouts');
@@ -176,7 +179,7 @@ class DisplayModes extends PanelMenu.Button {
         for (let i = 0; i < layouts.length; i++) {
             if (!layouts[i]) continue;
             try {
-                const layout = JSON.parse(layouts[i]);
+                const layout = parseLayout(layouts[i]);
                 const count = parseInt(usageCounts[i] || '0', 10) || 0;
                 parsed.push({layout, index: i, count});
             } catch (e) {
@@ -200,10 +203,12 @@ class DisplayModes extends PanelMenu.Button {
         this.menu.addMenuItem(loadingItem);
 
         // Async DBus call to detect current state without blocking the compositor
-        getCurrentState().then(currentState => {
+        getCurrentState().catch(() => null).then(currentState => {
+            if (this._destroyed || generation !== this._menuGeneration)
+                return; // stale reply, or indicator already destroyed
             this._populateMenu(parsed, currentState);
-        }).catch(() => {
-            this._populateMenu(parsed, null);
+        }).catch(e => {
+            console.error('Display Modes: failed to build menu', e);
         });
     }
 
@@ -283,15 +288,11 @@ class DisplayModes extends PanelMenu.Button {
 
         this._settings.set_int('last-applied', slotIndex);
 
-        const suppress = this._settings.get_boolean('confirm-switch');
-        if (suppress)
-            this._ext.armPendingConfirm();
-        applyLayout(layout, !suppress).catch(e => {
-            Main.notifyError('Display Modes', e.message);
-        });
+        this._ext.applySavedLayout(layout);
     }
 
     destroy() {
+        this._destroyed = true;
         if (this._changedId) {
             this._settings.disconnect(this._changedId);
             this._changedId = null;
@@ -304,18 +305,34 @@ class DisplayModes extends PanelMenu.Button {
     }
 });
 
+function parseLayout(json) {
+    const layout = JSON.parse(json);
+    if (!Array.isArray(layout?.logicalMonitors))
+        throw new Error('missing logicalMonitors');
+    return layout;
+}
+
 export default class DisplayModesExtension extends Extension {
     enable() {
         this._settings = this.getSettings();
         this._indicator = new DisplayModes(this);
         Main.panel.addToStatusArea('display-modes', this._indicator);
 
-        this._monitorManager = global.backend.get_monitor_manager();
-        this._updateAutoConfirm();
-        this._confirmSettingId = this._settings.connect('changed::confirm-switch',
-            () => this._updateAutoConfirm());
-
         this._restoreLayout();
+    }
+
+    /**
+     * Apply a saved layout, honouring the "suppress confirmation" setting.
+     * Suppressed switches use a temporary config, for which Mutter shows no
+     * "Keep these settings?" dialog; persistence across sessions is handled
+     * by _restoreLayout(). Otherwise a persistent config is applied and the
+     * shell shows its usual confirmation dialog.
+     */
+    applySavedLayout(layout) {
+        const persistent = !this._settings.get_boolean('confirm-switch');
+        applyLayout(layout, persistent).catch(e => {
+            Main.notifyError('Display Modes', e.message);
+        });
     }
 
     _restoreLayout() {
@@ -329,7 +346,7 @@ export default class DisplayModesExtension extends Extension {
 
         let layout;
         try {
-            layout = JSON.parse(layouts[slotIndex]);
+            layout = parseLayout(layouts[slotIndex]);
         } catch (e) {
             console.error(`Display Modes: failed to parse layout slot ${slotIndex} for restore`, e);
             return;
@@ -339,40 +356,17 @@ export default class DisplayModesExtension extends Extension {
         this._restoreId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, () => {
             this._restoreId = 0;
             getCurrentState().then(state => {
-                if (isActiveLayout(layout, state))
-                    return; // already correct, nothing to do
-                const suppress = this._settings.get_boolean('confirm-switch');
-                if (suppress)
-                    this.armPendingConfirm();
-                applyLayout(layout, !suppress).catch(e => {
-                    Main.notifyError('Display Modes', e.message);
-                });
-            }).catch(e => {
+                if (!this._settings)
+                    return; // extension was disabled while waiting
+                if (!isActiveLayout(layout, state))
+                    this.applySavedLayout(layout);
+            }, e => {
                 console.error('Display Modes: failed to get current state for restore', e);
+            }).catch(e => {
+                console.error('Display Modes: failed to restore layout', e);
             });
             return GLib.SOURCE_REMOVE;
         });
-    }
-
-    armPendingConfirm() {
-        this._pendingConfirm = true;
-    }
-
-    _updateAutoConfirm() {
-        const suppress = this._settings.get_boolean('confirm-switch');
-
-        if (suppress && !this._confirmId) {
-            this._confirmId = this._monitorManager.connect(
-                'confirm-display-change', () => {
-                    if (!this._pendingConfirm)
-                        return;
-                    this._pendingConfirm = false;
-                    this._monitorManager.confirm_display_change();
-                });
-        } else if (!suppress && this._confirmId) {
-            this._monitorManager.disconnect(this._confirmId);
-            this._confirmId = null;
-        }
     }
 
     disable() {
@@ -380,15 +374,6 @@ export default class DisplayModesExtension extends Extension {
             GLib.source_remove(this._restoreId);
             this._restoreId = 0;
         }
-        if (this._confirmId) {
-            this._monitorManager.disconnect(this._confirmId);
-            this._confirmId = null;
-        }
-        if (this._confirmSettingId) {
-            this._settings.disconnect(this._confirmSettingId);
-            this._confirmSettingId = null;
-        }
-        this._monitorManager = null;
         this._settings = null;
         this._indicator?.destroy();
         this._indicator = null;

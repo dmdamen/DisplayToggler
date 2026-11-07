@@ -127,6 +127,16 @@ export default class DisplayModesPreferences extends ExtensionPreferences {
                     const current = settings.get_strv('layouts');
                     current[slot] = '';
                     settings.set_strv('layouts', current);
+
+                    // Forget usage and restore state tied to the deleted profile
+                    const counts = settings.get_strv('usage-counts');
+                    if (slot < counts.length) {
+                        counts[slot] = '0';
+                        settings.set_strv('usage-counts', counts);
+                    }
+                    if (settings.get_int('last-applied') === slot)
+                        settings.set_int('last-applied', -1);
+
                     buildRows();
                 });
                 suffix.append(delBtn);

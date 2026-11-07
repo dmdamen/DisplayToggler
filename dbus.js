@@ -115,9 +115,12 @@ export function rectForMonitor(lm, mon) {
 /**
  * Whether a saved layout matches the given current display state (as
  * returned by getCurrentState): same logical monitor positions/scale/
- * transform, and same active mode per connector.
+ * transform containing the same connectors, and same active mode per
+ * connector.
  */
 export function isActiveLayout(layout, state) {
+    const connectorsOf = lm => lm.monitors.map(m => m.connector).sort().join('\n');
+
     if (layout.logicalMonitors.length !== state.logicalMonitors.length)
         return false;
 
@@ -125,7 +128,8 @@ export function isActiveLayout(layout, state) {
         const match = state.logicalMonitors.find(slm =>
             slm.x === lm.x && slm.y === lm.y &&
             Math.abs(slm.scale - lm.scale) < 0.01 &&
-            slm.transform === lm.transform
+            slm.transform === lm.transform &&
+            connectorsOf(slm) === connectorsOf(lm)
         );
         if (!match) return false;
 
@@ -175,8 +179,8 @@ export function applyLayout(layout, persistent = false) {
                         lm.monitors.map(mon => [mon.connector, mon.mode, {}]),
                     ]);
 
-                    // Method 1 = temporary (shows confirmation dialog)
-                    // Method 2 = persistent (no confirmation)
+                    // Method 1 = temporary (not saved, no confirmation dialog)
+                    // Method 2 = persistent (saved, shell asks for confirmation)
                     const method = persistent ? 2 : 1;
 
                     conn.call(
