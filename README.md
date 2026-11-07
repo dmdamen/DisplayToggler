@@ -21,7 +21,7 @@ Ideal for multi-monitor setups where you regularly switch between different arra
 
 ## Supported GNOME Versions
 
-GNOME Shell 45, 46, 47, 48, 49, 50
+GNOME Shell 45, 46, 47, 48, 49, 50, 51
 
 ## Installation
 
